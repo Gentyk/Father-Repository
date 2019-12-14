@@ -1,18 +1,66 @@
+# -*- coding: utf-8 -*-
+import codecs
 from collections import OrderedDict
+import configparser
 import pandas as pd
-import logging
 import datetime
-
-from default import date_
 
 
 class Record:
 
-    def __init__(self, differences: list, orders: list):
+    def __init__(self, engine_id, differences: list, orders: list, index_date: dict, order_dict: dict):
         if sum(differences) != 0:
             raise Exception(f"Sum differences != 0: {differences}")
+        self.engine_id = engine_id
         self.differences = differences
-        self.orders = orders
+        self.orders = [Record.sort_orders(week_order) for week_order in orders]
+        self.index_date = index_date    # соответсвие индекса массива определенной дате
+        self.order_dict = order_dict    # то , что было на старте:
+
+        # табличка для логирования случаев, когда переносим весь заказ
+        columns = ['Id_125', 'Заказ', 'from', 'to', 'Количество']
+        self.transfers_without_separation = pd.DataFrame(columns=columns)
+        # табличка для логирования случаев, когда переносим часть заказа
+        columns.extend(['Всего в заказе'])
+        self.transfers_with_separation = pd.DataFrame(columns=columns)
+
+    @staticmethod
+    def sort_orders(one_week_orders):
+        """ сортируем заказы на одну неделю в порядке возрастания двух номеров
+        """
+        new_orders = []
+        keys = list(one_week_orders.keys())
+        big_sort = []
+        for key in keys:
+            # получаем первое число
+            num1 = 0
+            x = key.split('*')
+            str1 = x[0]
+            n = len(str1)
+            for i in range(n):
+                try:
+                    local_num = int(str1[n - i])
+                    num1 += local_num * 10 ** i
+                except:
+                    break
+
+            # получаем второе число
+            num2 = 0
+            if len(x) > 1:
+                x = key.split('-')
+                if len(x) == 3:
+                    str2 = x[2]
+                    try:
+                        local_num = int(str2.split('/')[0])
+                        num2 += local_num
+                    except:
+                        pass
+            big_sort.append((num1, num2, key))
+        big_sort.sort(key=lambda x: (x[0], x[1]))
+        new_dict = OrderedDict()
+        for _, _, k in big_sort:
+            new_dict[k] = one_week_orders[k]
+        return new_dict
 
     def move(self, cell_from, cell_to, order_name, quality=None):
         """ Перемещение некоторого количества двигаетелей определенного заказа из одной ячейки массива orders в другую
@@ -32,7 +80,7 @@ class Record:
         if order_name in self.orders[cell_to]:
             self.orders[cell_to][order_name] += quality
         else:
-            self.orders[cell_to][order_name]= quality
+            self.orders[cell_to][order_name] = quality
 
     def move_left(self, cell_from: int, cell_to: int, delta:int):
         """ Перемещение заказов на более ранние недели с отметкой этого в журнале
@@ -51,13 +99,15 @@ class Record:
         from_local_order = self.orders[cell_from].copy()
         order_names = from_local_order.keys()
         for order_name in order_names:
-            if delta > from_local_order[order_name]:
+            if delta >= from_local_order[order_name]:
                 delta -= from_local_order[order_name]
                 self.move(cell_from, cell_to, order_name)
-                print(cell_from, cell_to, order_name)
+                # print(cell_from, cell_to, order_name)
+                self.mark_transition(order_name, cell_from, cell_to)
             else:
                 self.move(cell_from, cell_to, order_name, delta)
-                print(cell_from, cell_to, order_name, delta)
+                # print(cell_from, cell_to, order_name, delta)
+                self.mark_transition(order_name, cell_from, cell_to, delta)
                 break
 
     def move_right(self, cell_from: int, cell_to: int, delta: int, quality=None):
@@ -84,13 +134,15 @@ class Record:
                     pass
 
             # перемещение
-            if delta > from_local_order[order_name]:
+            if delta >= from_local_order[order_name]:
                 delta -= from_local_order[order_name]
                 self.move(cell_from, cell_to, order_name)
-                print(cell_from, cell_to, order_name)
+                # print(cell_from, cell_to, order_name)
+                self.mark_transition(order_name, cell_from, cell_to)
             else:
                 self.move(cell_from, cell_to, order_name, delta)
-                print(cell_from, cell_to, order_name, delta)
+                # print(cell_from, cell_to, order_name, delta)
+                self.mark_transition(order_name, cell_from, cell_to, delta)
                 break
 
     def normalize(self):
@@ -125,24 +177,64 @@ class Record:
                 self.differences[j] += self.differences[i]
                 self.differences[i] = 0
 
+    def mark_transition(self, order_name: str, cell_from: int, cell_to: int, quality: int=None):
+        """ Записываем в таблички что и куда перенесли"""
+        if not quality:
+            # переносим весь заказ
+            self.transfers_without_separation = self.transfers_without_separation.append(
+                {
+                    'Id_125': self.engine_id,
+                    'Заказ': order_name,
+                    'from': self.index_date[cell_from],
+                    'to': self.index_date[cell_to],
+                    'Количество': self.order_dict[order_name],
+                },
+                ignore_index=True
+            )
+        else:
+            # переносим часть
+            self.transfers_with_separation = self.transfers_with_separation.append(
+                {
+                    'Id_125': self.engine_id,
+                    'Заказ': order_name,
+                    'from': self.index_date[cell_from],
+                    'to': self.index_date[cell_to],
+                    'Количество': quality,
+                    'Всего в заказе': self.order_dict[order_name]
+                },
+                ignore_index=True
+            )
+
 
 def get_index_week(row, date_df):
+    """ Возвращает словари соответсвия дат и индексов будущих таблиц
 
+    Рассматривая каждое издение, будут созданы массивы каждый элемент которых соответствует отстованию от плана
+    на неделю или содержит список заказов на определенной неделе. Для того, чтобы не потерять соответствие дат и
+    индексов массивов ввожу дополнительные словари соответствия.
+
+    index_date - словарь , где каждому индексу соответствует дата
+        например,
+        {
+            '01.03.2019': 0,
+            '07.03.2019': 1,
+            ...
+        }
+    index_week - аналогично, но только с номерами недели
+        например,
+        {
+            9: 0,
+            10: 1,
+            ...
+        }
+    """
     keys = row.keys()
     keys = [int(key[2:]) for key in keys if key.startswith('Gr')]
     keys.sort()
     index_week = {keys[i]: i for i in range(len(keys))}
-    # print(keys)
-    # print(date_df['т'])
-    #
+
     date_df['datetime'] = date_df['тт'].apply(lambda x: datetime.date(x.year, x.month, x.day))
-    # for i in range(len(keys)):
-    #     print(date_df['datetime'].get(i), date_[keys[i]], date_df['datetime'].get(i) == date_[keys[i]])
-    #     gg = date_df.loc[date_df['datetime'] == date_[keys[i]]]
-    #     print(gg.get('тт').values[0])
     index_date = {date_df.loc[date_df['т'] == keys[i]].get('datetime').values[0]: i for i in range(len(keys))}
-    # for k, v in index_date.items():
-    #     print(type(k), k, v)
     return index_week, index_date
 
 
@@ -153,6 +245,10 @@ def get_record(row, order_df, index_week, index_date):
 
     :param row: pandas.Series - одна строка таблицы планирования
     :param order_df: pandas.DataFrame - таблица заказов
+    :param index_week: соответсвие индексов номерам недель
+    :param index_date: соответсвие индексов пятницам(дням)
+    :return: pandas.DataFrame - таблица перенесенных заказов без разделения
+             pandas.DataFrame - таблица перенесенных заказов, когда произошло разделение
     """
     # сначала сформируем массив несостыковки планов и графиков
     differences = [0 for _ in range(len(index_week))]
@@ -161,23 +257,29 @@ def get_record(row, order_df, index_week, index_date):
             differences[index_week[int(k[2:])]] += int(row[k])
         if k.startswith("Pl") and row[k]:
             differences[index_week[int(k[2:])]] -= int(row[k])
-    print(differences)
+    #print(differences)
 
+    # формируем массив заказов
     orders = [{} for _ in range(len(index_week))]
-    local_order_df = order_df.loc[order_df['Id_125'] == row[' ID_125 ']]
-   # local_order_df['datetime'] = local_order_df['Дата кон.'].apply(lambda x: datetime.date(x.year, x.month, x.day))
+    engine_id = row[' ID_125 ']
+    local_order_df = order_df.loc[order_df['Id_125'] == engine_id]
+    local_order_dict = {}
     for ind, local_row in local_order_df.iterrows():
         order = local_row['Заказ']
         date = local_row['datetime']
         number_of_engines = local_row['План']
-        # print(type(pd.to_datetime(date)))
-        # print(index_date[date], date)
-        orders[index_date[date]][order] = number_of_engines
-    # for i in orders:
-    #     print(i)
-    record = Record(differences, orders)
+        if order in local_order_dict:
+            orders[index_date[date]][order] += number_of_engines
+            local_order_dict[order] += number_of_engines
+        else:
+            orders[index_date[date]][order] = number_of_engines
+            local_order_dict[order] = number_of_engines
+
+    invert_index_date = {v: k for k, v in index_date.items()}
+    record = Record(engine_id, differences, orders, invert_index_date, local_order_dict)
     record.normalize()
 
+    return record.transfers_without_separation, record.transfers_with_separation
 
 
 def check_schedule_table(schedule_df):
@@ -194,35 +296,61 @@ def check_schedule_table(schedule_df):
             if k.startswith("Pl") and row[k]:
                 sum_ -= row[k]
         if sum_ != 0:
-            # print(sum_)
-            # print(row)
             error_indexes.append(index)
     if error_indexes:
         raise Exception(f"Таблица планирования неверна: в строках {error_indexes} нестыковки по графику и плану "
                         f"разнятся.")
 
 
-def main():
-    filename = "123.xls"
-    order_sheet = "дано"
-    schedule_sheet = "ориг"
-    date_sheet = "Лист0"
-    xl = pd.ExcelFile(filename)
-    order_df = xl.parse(order_sheet, skiprows=2)
+def get_tables(conf_file='config.ini'):
+    """ Получение и минимальное форматирование стартовых таблиц
+    """
+    config = configparser.ConfigParser()
+    config.read_file(codecs.open(conf_file, "r", "utf8"))
+    def_section = config['DEFAULT']
+    xl = pd.ExcelFile(def_section['filepath'])
+
+    # большая таблица заказов
+    order_df = xl.parse(def_section['order_sheet'], skiprows=2)
     order_df['datetime'] = order_df['Дата кон.'].apply(lambda x: datetime.date(x.year, x.month, x.day))
-    date_df = xl.parse(date_sheet)
-    schedule_df = xl.parse(schedule_sheet, skiprows=1)
+
+    # даты
+    date_df = xl.parse(def_section['date_sheet'])
+
+    # таблица планирования
+    schedule_df = xl.parse(def_section['schedule_sheet'], skiprows=1)
     schedule_df = schedule_df.fillna(0)     # заполнили пробелы ноликами
     check_schedule_table(schedule_df)
+    xl.close()
+    return order_df, schedule_df, date_df
+
+
+def write_to_file(df_, df_separation, conf_file='config.ini'):
+    config = configparser.ConfigParser()
+    config.read_file(codecs.open(conf_file, "r", "utf8"))
+    def_section = config['DEFAULT']
+    with pd.ExcelWriter(def_section['result_filepath'], engine='xlsxwriter') as writer:
+        df_.to_excel(writer, sheet_name=def_section['result_sheet'], index=False)
+        df_separation.to_excel(writer, sheet_name=def_section['result_separation_sheet'], index=False)
+        writer.save()
+
+
+def main():
+    order_df, schedule_df, date_df = get_tables()
+    result_table = pd.DataFrame()
+    result_table_with_separation = pd.DataFrame()
     index_week, index_date = None, None
     for index, row in schedule_df.iterrows():
+
         if index_date is None:
             index_week, index_date = get_index_week(row, date_df)
 
-        get_record(row, order_df, index_week, index_date)
-        #break
+        res_df, res_df_with_separation = get_record(row, order_df, index_week, index_date)
+        result_table = result_table.append(res_df.copy())
+        result_table_with_separation = result_table_with_separation.append(res_df_with_separation.copy())
+
+    write_to_file(result_table, result_table_with_separation)
+
 
 if __name__ == "__main__":
     main()
-
-
