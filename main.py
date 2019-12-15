@@ -22,11 +22,12 @@ class Record:
         self.move_to_future = {}
 
         # табличка для логирования случаев, когда переносим весь заказ
-        columns = ['Id_125', 'План', 'вн/внутр', 'Заказ', 'Дата кон.', 'd+']
+        columns = ['Id_125', 'Заказ','План', 'вн/внутр',  'Дата кон.', 'd+']
         self.transfers_without_separation = pd.DataFrame(columns=columns)
         # табличка для логирования случаев, когда переносим часть заказа
-        columns.extend(['Всего в заказе'])
-        self.transfers_with_separation = pd.DataFrame(columns=columns)
+        columns2 = ['Id_125', 'Заказ', 'Всего в заказе', 'Дата кон.', 'План', 'd+']
+
+        self.transfers_with_separation = pd.DataFrame(columns=columns2)
 
     @staticmethod
     def sort_orders(one_week_orders):
@@ -202,8 +203,8 @@ class Record:
             'План': self.order_dict[order_name][0],
             'вн/внутр': 1 if self.order_dict[order_name][1] == 'внешний' else 2,
             'Заказ': order_name,
-            'Дата кон.': self.index_date[cell_from].strftime("%d-%m-%Y"),
-            'd+': self.index_date[cell_to].strftime("%d-%m-%Y"),
+            'Дата кон.': self.index_date[cell_from].strftime("%d.%m.%Y"),
+            'd+': self.index_date[cell_to].strftime("%d.%m.%Y"),
         }
         if not quality:
             # переносим весь заказ
@@ -212,6 +213,7 @@ class Record:
                 ignore_index=True
             )
         else:
+            del data['вн/внутр']
             data['План'] = quality
             data['Всего в заказе'] = self.order_dict[order_name][0]
             # переносим часть
