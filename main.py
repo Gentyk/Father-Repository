@@ -13,6 +13,9 @@ class Record:
             raise Exception(f"Sum differences != 0: {differences}")
         self.engine_id = engine_id
         self.differences = differences
+        for i in range(len(differences)):
+            if differences[i] < 0 and -differences[i] > sum(orders[i].values()):
+                raise Exception(f"План расходится с заказом на детали {engine_id}.")
         self.orders = [Record.sort_orders(week_order) for week_order in orders]
         self.index_date = index_date    # соответсвие индекса массива определенной дате
         self.order_dict = order_dict    # то , что было на старте:
