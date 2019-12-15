@@ -164,7 +164,7 @@ class Record:
                 # Если по графику мы опережаем (Gr>0, PL=0)
                 j = i + 1
                 while self.differences[i] != 0:
-                    if self.orders[j] is not {}:
+                    if self.orders[j]:
                         week_sum = sum(self.orders[j].values())
                         if week_sum >= self.differences[i]:
                             self.move_left(j, i, self.differences[i])
