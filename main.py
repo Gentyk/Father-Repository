@@ -16,6 +16,7 @@ class Record:
         self.orders = [Record.sort_orders(week_order) for week_order in orders]
         self.index_date = index_date    # соответсвие индекса массива определенной дате
         self.order_dict = order_dict    # то , что было на старте:
+        self.move_to_future = {}
 
         # табличка для логирования случаев, когда переносим весь заказ
         columns = ['Id_125', 'План', 'вн/внутр', 'Заказ', 'Дата кон.', 'd+']
@@ -125,24 +126,33 @@ class Record:
         # порядок перемещения - начинаем с более старых заказов
         order_names = list(order_names)[::-1]
         for order_name in order_names:
+            if order_name not in self.move_to_future:
+                self.move_to_future[order_name] = [cell_from, None]
             # логгирование
             if quality and quality > 0:
-                if quality > from_local_order[order_name]:
-                    pass
-                else:
+                cell_from_optional = self.move_to_future[order_name][0] if order_name in self.move_to_future else cell_from
+                if quality == from_local_order[order_name]:
+                    if self.move_to_future[order_name][1]:
+                        self.mark_transition(order_name, cell_from_optional, cell_to, quality)
+                    else:
+                        self.mark_transition(order_name, cell_from_optional, cell_to)
                     quality = 0
-                    pass
+                else:
+                    self.mark_transition(order_name, cell_from_optional, cell_to, min(from_local_order[order_name], quality))
+                    quality -= from_local_order[order_name]
+
 
             # перемещение
             if delta >= from_local_order[order_name]:
                 delta -= from_local_order[order_name]
                 self.move(cell_from, cell_to, order_name)
                 # print(cell_from, cell_to, order_name)
-                self.mark_transition(order_name, cell_from, cell_to)
+
             else:
+                self.move_to_future[order_name][1] = True
                 self.move(cell_from, cell_to, order_name, delta)
                 # print(cell_from, cell_to, order_name, delta)
-                self.mark_transition(order_name, cell_from, cell_to, delta)
+
                 break
 
     def normalize(self):
@@ -172,8 +182,8 @@ class Record:
                 #
                 # в таком случае мы просто перемещаем необходимое количество заказов в правостоящую ячейку
                 j = i + 1
-                sum_ = sum(self.orders[j])
-                self.move_right(i, j, -self.differences[i], sum_)
+                sum_ = sum(self.orders[j].values()) if self.orders[j] else 0
+                self.move_right(i, j, -self.differences[i], min(-self.differences[i], sum_) if sum_ else sum_)
                 self.differences[j] += self.differences[i]
                 self.differences[i] = 0
 
