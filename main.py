@@ -18,7 +18,7 @@ class Record:
         self.order_dict = order_dict    # то , что было на старте:
 
         # табличка для логирования случаев, когда переносим весь заказ
-        columns = ['Id_125', 'Заказ', 'from', 'to', 'Количество']
+        columns = ['Id_125', 'План', 'вн/внутр', 'Заказ', 'Дата кон.', 'd+']
         self.transfers_without_separation = pd.DataFrame(columns=columns)
         # табличка для логирования случаев, когда переносим часть заказа
         columns.extend(['Всего в заказе'])
@@ -48,8 +48,8 @@ class Record:
             num2 = 0
             if len(x) > 1:
                 x = key.split('-')
-                if len(x) == 3:
-                    str2 = x[2]
+                if len(x) > 1:
+                    str2 = x[-1]
                     try:
                         local_num = int(str2.split('/')[0])
                         num2 += local_num
@@ -179,29 +179,26 @@ class Record:
 
     def mark_transition(self, order_name: str, cell_from: int, cell_to: int, quality: int=None):
         """ Записываем в таблички что и куда перенесли"""
+        data = {
+            'Id_125': self.engine_id,
+            'План': self.order_dict[order_name][0],
+            'вн/внутр': 1 if self.order_dict[order_name][1] == 'внешний' else 2,
+            'Заказ': order_name,
+            'Дата кон.': self.index_date[cell_from].strftime("%d-%m-%Y"),
+            'd+': self.index_date[cell_to].strftime("%d-%m-%Y"),
+        }
         if not quality:
             # переносим весь заказ
             self.transfers_without_separation = self.transfers_without_separation.append(
-                {
-                    'Id_125': self.engine_id,
-                    'Заказ': order_name,
-                    'from': self.index_date[cell_from],
-                    'to': self.index_date[cell_to],
-                    'Количество': self.order_dict[order_name],
-                },
+                data.copy(),
                 ignore_index=True
             )
         else:
+            data['План'] = quality
+            data['Всего в заказе'] = self.order_dict[order_name][0]
             # переносим часть
             self.transfers_with_separation = self.transfers_with_separation.append(
-                {
-                    'Id_125': self.engine_id,
-                    'Заказ': order_name,
-                    'from': self.index_date[cell_from],
-                    'to': self.index_date[cell_to],
-                    'Количество': quality,
-                    'Всего в заказе': self.order_dict[order_name]
-                },
+                data.copy(),
                 ignore_index=True
             )
 
@@ -261,7 +258,7 @@ def get_record(row, order_df, index_week, index_date):
 
     # формируем массив заказов
     orders = [{} for _ in range(len(index_week))]
-    engine_id = row[' ID_125 ']
+    engine_id = row['ID_125']
     local_order_df = order_df.loc[order_df['Id_125'] == engine_id]
     local_order_dict = {}
     for ind, local_row in local_order_df.iterrows():
@@ -270,10 +267,13 @@ def get_record(row, order_df, index_week, index_date):
         number_of_engines = local_row['План']
         if order in local_order_dict:
             orders[index_date[date]][order] += number_of_engines
-            local_order_dict[order] += number_of_engines
+            local_order_dict[order][0] += number_of_engines
         else:
             orders[index_date[date]][order] = number_of_engines
-            local_order_dict[order] = number_of_engines
+            local_order_dict[order] = (
+                number_of_engines,
+                local_row['вн/внутр'].strip()
+            )
 
     invert_index_date = {v: k for k, v in index_date.items()}
     record = Record(engine_id, differences, orders, invert_index_date, local_order_dict)
@@ -322,6 +322,13 @@ def get_tables(conf_file='config.ini'):
     schedule_df = schedule_df.fillna(0)     # заполнили пробелы ноликами
     check_schedule_table(schedule_df)
     xl.close()
+
+    for datafr in [order_df, schedule_df, date_df]:
+        columns = {i: i.strip() for i in list(datafr.columns) if i != i.strip()}
+        if columns:
+            print(columns)
+            datafr = datafr.rename(columns=columns, inplace=True)
+
     return order_df, schedule_df, date_df
 
 
