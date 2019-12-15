@@ -124,7 +124,7 @@ class Record:
         """
         if cell_from >= cell_to:
             raise Exception(f"Ошибка в порядке перемещения move_right: {cell_from} >= {cell_to}")
-        from_local_order = self.orders[cell_from]
+        from_local_order = Record.sort_orders(self.orders[cell_from])
         order_names = from_local_order.keys()
         # порядок перемещения - начинаем с более старых заказов
         order_names = list(order_names)[::-1]
@@ -134,12 +134,12 @@ class Record:
             # логгирование
             if quality and quality > 0:
                 cell_from_optional = self.move_to_future[order_name][0] if order_name in self.move_to_future else cell_from
-                if quality == from_local_order[order_name]:
+                if quality >= from_local_order[order_name]:
                     if self.move_to_future[order_name][1]:
                         self.mark_transition(order_name, cell_from_optional, cell_to, quality)
                     else:
                         self.mark_transition(order_name, cell_from_optional, cell_to)
-                    quality = 0
+                    quality -= from_local_order[order_name]
                 else:
                     self.mark_transition(order_name, cell_from_optional, cell_to, min(from_local_order[order_name], quality))
                     quality -= from_local_order[order_name]
@@ -150,6 +150,8 @@ class Record:
                 delta -= from_local_order[order_name]
                 self.move(cell_from, cell_to, order_name)
                 # print(cell_from, cell_to, order_name)
+                if delta == 0:
+                    break
 
             else:
                 self.move_to_future[order_name][1] = True
@@ -186,7 +188,10 @@ class Record:
                 # в таком случае мы просто перемещаем необходимое количество заказов в правостоящую ячейку
                 j = i + 1
                 sum_ = sum(self.orders[j].values()) if self.orders[j] else 0
-                self.move_right(i, j, -self.differences[i], min(-self.differences[i], sum_) if sum_ else sum_)
+                quality = min(-self.differences[i], sum_) if sum_ else sum_
+                if self.differences[j] > quality:
+                    quality = self.differences[j]
+                self.move_right(i, j, -self.differences[i], quality)
                 self.differences[j] += self.differences[i]
                 self.differences[i] = 0
 
