@@ -22,7 +22,7 @@ class Record:
         self.move_to_future = {}
 
         # табличка для логирования случаев, когда переносим весь заказ
-        columns = ['Id_125', 'Заказ','План', 'вн/внутр',  'Дата кон.', 'd+']
+        columns = ['Id_125', 'План', 'вн/внутр', 'Заказ', 'Дата кон.', 'd+']
         self.transfers_without_separation = pd.DataFrame(columns=columns)
         # табличка для логирования случаев, когда переносим часть заказа
         columns2 = ['Id_125', 'Заказ', 'Всего в заказе', 'Дата кон.', 'План', 'd+']
@@ -203,8 +203,8 @@ class Record:
             'План': self.order_dict[order_name][0],
             'вн/внутр': 1 if self.order_dict[order_name][1] == 'внешний' else 2,
             'Заказ': order_name,
-            'Дата кон.': self.index_date[cell_from].strftime("%d.%m.%Y"),
-            'd+': self.index_date[cell_to].strftime("%d.%m.%Y"),
+            'Дата кон.': self.index_date[cell_from],
+            'd+': self.index_date[cell_to],
         }
         if not quality:
             # переносим весь заказ
@@ -356,7 +356,7 @@ def write_to_file(df_, df_separation, conf_file='config.ini'):
     config = configparser.ConfigParser()
     config.read_file(codecs.open(conf_file, "r", "utf8"))
     def_section = config['DEFAULT']
-    with pd.ExcelWriter(def_section['result_filepath'], engine='xlsxwriter') as writer:
+    with pd.ExcelWriter(def_section['result_filepath'], engine='xlsxwriter', date_format='dd.mm.yyyy') as writer:
         df_.to_excel(writer, sheet_name=def_section['result_sheet'], index=False)
         df_separation.to_excel(writer, sheet_name=def_section['result_separation_sheet'], index=False)
         writer.save()
