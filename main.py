@@ -286,14 +286,15 @@ def get_record(row, order_df, index_week, index_date):
         date = local_row['datetime']
         number_of_engines = local_row['План']
         if order in local_order_dict:
-            orders[index_date[date]][order] += number_of_engines
+            if order in orders[index_date[date]]:
+                orders[index_date[date]][order] += number_of_engines
             local_order_dict[order][0] += number_of_engines
         else:
             orders[index_date[date]][order] = number_of_engines
-            local_order_dict[order] = (
+            local_order_dict[order] = [
                 number_of_engines,
                 local_row['вн/внутр'].strip()
-            )
+            ]
 
     invert_index_date = {v: k for k, v in index_date.items()}
     record = Record(engine_id, differences, orders, invert_index_date, local_order_dict)
