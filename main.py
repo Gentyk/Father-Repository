@@ -285,12 +285,15 @@ def get_record(row, order_df, index_week, index_date):
         order = local_row['Заказ']
         date = local_row['datetime']
         number_of_engines = local_row['План']
-        if order in local_order_dict:
-            if order in orders[index_date[date]]:
-                orders[index_date[date]][order] += number_of_engines
-            local_order_dict[order][0] += number_of_engines
+
+        if order in orders[index_date[date]]:
+            orders[index_date[date]][order] += number_of_engines
         else:
             orders[index_date[date]][order] = number_of_engines
+
+        if order in local_order_dict:
+            local_order_dict[order][0] += number_of_engines
+        else:
             local_order_dict[order] = [
                 number_of_engines,
                 local_row['вн/внутр'].strip()
