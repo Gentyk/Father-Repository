@@ -2,6 +2,7 @@
 import codecs
 from collections import OrderedDict
 import configparser
+import json
 import pandas as pd
 import datetime
 
@@ -356,13 +357,49 @@ def get_tables(conf_file='config.ini'):
     return order_df, schedule_df, date_df
 
 
+def split_into_iterations(df_separation) -> list:
+    """ Разделим результат (разделяющиеся заказы) на итерации в случае, если в результатах заказ делился несколько раз
+    """
+    iterations = []
+    select_columns = ['Id_125', 'Заказ', 'Всего в заказе', 'Дата кон.']
+    columns2 = ['Id_125', 'Заказ', 'Всего в заказе', 'Дата кон.', 'План', 'd+']
+    orders = {}
+    for row in df_separation.to_dict(orient='records'):
+        keys = str({k: v for k, v in row.items() if k in select_columns})
+        if keys in orders:
+            index = orders[keys][0]
+            number_of_engines = orders[keys][1]
+            while len(iterations) < index + 1:
+                iterations.append(pd.DataFrame(columns=columns2))
+            update_row = row.copy()
+            update_row['Всего в заказе'] -= number_of_engines
+            iterations[index] = iterations[index].append(
+                update_row.copy(),
+                ignore_index=True
+            )
+
+            orders[keys] = [index + 1, number_of_engines + row['План']]
+        else:
+            if not iterations:
+                iterations.append(pd.DataFrame(columns=columns2))
+            iterations[0] = iterations[0].append(
+                row.copy(),
+                ignore_index=True
+            )
+            orders[keys] = [1, row['План']]
+    return iterations
+
+
 def write_to_file(df_, df_separation, conf_file='config.ini'):
     config = configparser.ConfigParser()
     config.read_file(codecs.open(conf_file, "r", "utf8"))
     def_section = config['DEFAULT']
+    df_separation_list = split_into_iterations(df_separation)
     with pd.ExcelWriter(def_section['result_filepath'], engine='xlsxwriter', date_format='dd.mm.yyyy') as writer:
         df_.to_excel(writer, sheet_name=def_section['result_sheet'], index=False)
-        df_separation.to_excel(writer, sheet_name=def_section['result_separation_sheet'], index=False)
+        for i, df_sep in enumerate(df_separation_list):
+            sheet_name = def_section['result_separation_sheet'] + f"(iter-{i})"
+            df_sep.to_excel(writer, sheet_name=sheet_name, index=False)
         writer.save()
 
 
