@@ -88,6 +88,8 @@ class Record:
         else:
             self.orders[cell_to][order_name] = quality
 
+        self.orders[cell_to] = Record.sort_orders(self.orders[cell_to])
+
     def move_left(self, cell_from: int, cell_to: int, delta:int):
         """ Перемещение заказов на более ранние недели с отметкой этого в журнале
 
@@ -133,33 +135,19 @@ class Record:
         for order_name in order_names:
             if order_name not in self.move_to_future:
                 self.move_to_future[order_name] = [cell_from, None]
-            # логгирование
-            if quality and quality > 0:
-                cell_from_optional = self.move_to_future[order_name][0] if order_name in self.move_to_future else cell_from
-                if quality >= from_local_order[order_name]:
-                    if self.move_to_future[order_name][1]:
-                        self.mark_transition(order_name, cell_from_optional, cell_to, quality)
-                    else:
-                        self.mark_transition(order_name, cell_from_optional, cell_to)
-                    quality -= from_local_order[order_name]
-                else:
-                    self.mark_transition(order_name, cell_from_optional, cell_to, min(from_local_order[order_name], quality))
-                    quality -= from_local_order[order_name]
-
 
             # перемещение
             if delta >= from_local_order[order_name]:
                 delta -= from_local_order[order_name]
                 self.move(cell_from, cell_to, order_name)
-                # print(cell_from, cell_to, order_name)
+                self.mark_transition(order_name, cell_from, cell_to)
                 if delta == 0:
                     break
 
             else:
                 self.move_to_future[order_name][1] = True
                 self.move(cell_from, cell_to, order_name, delta)
-                # print(cell_from, cell_to, order_name, delta)
-
+                self.mark_transition(order_name, cell_from, cell_to, delta)
                 break
 
     def normalize(self):
@@ -209,19 +197,84 @@ class Record:
         }
         if not quality:
             # переносим весь заказ
-            self.transfers_without_separation = self.transfers_without_separation.append(
-                data.copy(),
-                ignore_index=True
-            )
+            # если он уже был
+            t = self.transfers_without_separation[
+                (self.transfers_without_separation['Id_125'] == self.engine_id) &
+                (self.transfers_without_separation['План'] == self.order_dict[order_name][0]) &
+                (self.transfers_without_separation['Заказ'] == order_name) &
+                (self.transfers_without_separation['d+'] == self.index_date[cell_from])
+            ]
+            if not t.empty:
+                self.transfers_without_separation.loc[t.index, 'd+'] = self.index_date[cell_to]
+            else:
+                # если еще не было, то оставляем исходные данные
+                self.transfers_without_separation = self.transfers_without_separation.append(
+                    data.copy(),
+                    ignore_index=True
+                )
+        # переносим часть
         else:
             del data['вн/внутр']
             data['План'] = quality
             data['Всего в заказе'] = self.order_dict[order_name][0]
-            # переносим часть
-            self.transfers_with_separation = self.transfers_with_separation.append(
-                data.copy(),
-                ignore_index=True
-            )
+            # сначала проверяем в целых
+            # если найдем, то удаляем оттуда,
+            # запомнив начальную дату и создав две записи
+            t = self.transfers_without_separation[
+                (self.transfers_without_separation['Id_125'] == self.engine_id) &
+                (self.transfers_without_separation['План'] == self.order_dict[order_name][0]) &
+                (self.transfers_without_separation['Заказ'] == order_name) &
+                (self.transfers_without_separation['d+'] == self.index_date[cell_from])
+            ]
+            if not t.empty:
+                # преобразуем запись из таблицы без делений
+                local_data = t.to_dict(orient='records')[0]
+                local_data['План'] = local_data['План'] - data['План']
+                del local_data['вн/внутр']
+                data['План'] = quality
+                local_data['Всего в заказе'] = self.order_dict[order_name][0]
+                # удаляем запись
+                self.transfers_without_separation = self.transfers_without_separation.loc[
+                    ~(self.transfers_without_separation['Id_125'] == self.engine_id) |
+                    ~(self.transfers_without_separation['План'] == self.order_dict[order_name][0]) |
+                    ~(self.transfers_without_separation['Заказ'] == order_name) |
+                    ~(self.transfers_without_separation['d+'] == self.index_date[cell_from])
+                ]
+                # записываем в таблицу делений
+                self.transfers_with_separation = self.transfers_with_separation.append(
+                    local_data.copy(),
+                    ignore_index=True
+                )
+
+                data['Дата кон.'] = local_data['Дата кон.']
+                self.transfers_with_separation = self.transfers_with_separation.append(
+                    data.copy(),
+                    ignore_index=True
+                )
+            else:
+                # если в целочисленной части нету, то ищем в дробной
+                t = self.transfers_with_separation[
+                    (self.transfers_with_separation['Id_125'] == self.engine_id) &
+                    (self.transfers_with_separation['Заказ'] == order_name) &
+                    (self.transfers_with_separation['d+'] == self.index_date[cell_from])
+                    ]
+                if t.empty:
+                    # если такой записи не было, то пишем с нуля
+                    self.transfers_with_separation = self.transfers_with_separation.append(
+                        data.copy(),
+                        ignore_index=True
+                    )
+                elif int(t['План']) == quality:
+                    # в случае полного совпадения  - переносим дату
+                    self.transfers_with_separation.loc[t.index, 'd+'] = self.index_date[cell_to]
+                else:
+                    local_delta = self.transfers_with_separation['План'] - quality
+                    data['Дата кон.'] = t.to_dict(orient='records')[0]['Дата кон.']
+                    self.transfers_with_separation.loc[t.index, 'План'] = local_delta
+                    self.transfers_with_separation = self.transfers_with_separation.append(
+                        data.copy(),
+                        ignore_index=True
+                    )
 
 
 def get_index_week(row, date_df):
