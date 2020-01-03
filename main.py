@@ -27,7 +27,6 @@ class Record:
         self.transfers_without_separation = pd.DataFrame(columns=columns)
         # табличка для логирования случаев, когда переносим часть заказа
         columns2 = ['Id_125', 'Заказ', 'Всего в заказе', 'Дата кон.', 'План', 'd+']
-
         self.transfers_with_separation = pd.DataFrame(columns=columns2)
 
     @staticmethod
@@ -45,7 +44,7 @@ class Record:
             n = len(str1)
             for i in range(n):
                 try:
-                    local_num = int(str1[n - i])
+                    local_num = int(str1[n - i - 1])
                     num1 += local_num * 10 ** i
                 except:
                     break
@@ -190,7 +189,7 @@ class Record:
         data = {
             'Id_125': self.engine_id,
             'План': self.order_dict[order_name][0],
-            'вн/внутр': 1 if self.order_dict[order_name][1] == 'внешний' else 2,
+            'вн/внутр': self.order_dict[order_name][1],
             'Заказ': order_name,
             'Дата кон.': self.index_date[cell_from],
             'd+': self.index_date[cell_to],
@@ -350,7 +349,7 @@ def get_record(row, order_df, index_week, index_date):
         else:
             local_order_dict[order] = [
                 number_of_engines,
-                local_row['вн/внутр'].strip()
+                local_row['вн/внутр']
             ]
 
     invert_index_date = {v: k for k, v in index_date.items()}
@@ -401,19 +400,29 @@ def get_tables(conf_file='config.ini'):
     check_schedule_table(schedule_df)
     xl.close()
 
+    # обрезаем лишние пробелы у столбцов, чтобы не было проблем при обращении по именам
     for datafr in [order_df, schedule_df, date_df]:
         columns = {i: i.strip() for i in list(datafr.columns) if i != i.strip()}
         if columns:
             print(columns)
             datafr = datafr.rename(columns=columns, inplace=True)
 
-    return order_df, schedule_df, date_df
+    # словарь вн/внутр для заказов
+    order_df.loc[order_df['вн/внутр'] != 'внешний', 'вн/внутр'] = 2
+    order_df.loc[order_df['вн/внутр'] == 'внешний', 'вн/внутр'] = 1
+    unique_orders_names = order_df['Заказ'].unique()
+    order_type = {}
+    for name in unique_orders_names:
+        order_type[name] = order_df[order_df['Заказ'] == name]['вн/внутр'].values[0]
+
+    return order_df, schedule_df, date_df, order_type
 
 
-def split_into_iterations(df_separation) -> list:
+def split_into_iterations(df_separation, order_types) -> (list, pd.DataFrame):
     """ Разделим результат (разделяющиеся заказы) на итерации в случае, если в результатах заказ делился несколько раз
     """
     iterations = []
+    second_integer_order_df = pd.DataFrame(columns=['Id_125', 'План', 'вн/внутр', 'Заказ', 'Дата кон.', 'd+'])
     select_columns = ['Id_125', 'Заказ', 'Всего в заказе', 'Дата кон.']
     columns2 = ['Id_125', 'Заказ', 'Всего в заказе', 'Дата кон.', 'План', 'd+']
     orders = {}
@@ -422,34 +431,54 @@ def split_into_iterations(df_separation) -> list:
         if keys in orders:
             index = orders[keys][0]
             number_of_engines = orders[keys][1]
-            while len(iterations) < index + 1:
-                iterations.append(pd.DataFrame(columns=columns2))
             update_row = row.copy()
             update_row['Всего в заказе'] -= number_of_engines
-            iterations[index] = iterations[index].append(
-                update_row.copy(),
-                ignore_index=True
-            )
-
-            orders[keys] = [index + 1, number_of_engines + row['План']]
+            while len(iterations) < index + 1 and update_row['Всего в заказе'] != update_row['План']:
+                iterations.append(pd.DataFrame(columns=columns2))
+            if update_row['Всего в заказе'] != update_row['План']:
+                iterations[index] = iterations[index].append(
+                    update_row.copy(),
+                    ignore_index=True
+                )
+                orders[keys] = [index + 1, number_of_engines + row['План']]
+            else:
+                del update_row['Всего в заказе']
+                update_row['вн/внутр'] = order_types[update_row['Заказ']]
+                second_integer_order_df = second_integer_order_df.append(
+                    update_row.copy(),
+                    ignore_index=True
+                )
+                orders[keys][1] = number_of_engines + row['План']
         else:
             if not iterations:
                 iterations.append(pd.DataFrame(columns=columns2))
-            iterations[0] = iterations[0].append(
-                row.copy(),
-                ignore_index=True
-            )
-            orders[keys] = [1, row['План']]
-    return iterations
+            update_row = row.copy()
+            if update_row['Всего в заказе'] != update_row['План']:
+                iterations[0] = iterations[0].append(
+                    update_row.copy(),
+                    ignore_index=True
+                )
+                orders[keys] = [1, row['План']]
+            else:
+                del update_row['Всего в заказе']
+                update_row['вн/внутр'] = order_types[update_row['Заказ']]
+                second_integer_order_df = second_integer_order_df.append(
+                    update_row.copy(),
+                    ignore_index=True
+                )
+                orders[keys] = [0, row['План']]
+    return iterations, second_integer_order_df
 
 
-def write_to_file(df_, df_separation, conf_file='config.ini'):
+def write_to_file(df_, df_separation, order_types, conf_file='config.ini'):
     config = configparser.ConfigParser()
     config.read_file(codecs.open(conf_file, "r", "utf8"))
     def_section = config['DEFAULT']
-    df_separation_list = split_into_iterations(df_separation)
+    df_separation_list, second_integer_order_df = split_into_iterations(df_separation, order_types)
     with pd.ExcelWriter(def_section['result_filepath'], engine='xlsxwriter', date_format='dd.mm.yyyy') as writer:
         df_.to_excel(writer, sheet_name=def_section['result_sheet'], index=False)
+        if not second_integer_order_df.empty:
+            second_integer_order_df.to_excel(writer, sheet_name='res_2', index=False)
         for i, df_sep in enumerate(df_separation_list):
             sheet_name = def_section['result_separation_sheet'] + f"(iter-{i})"
             df_sep.to_excel(writer, sheet_name=sheet_name, index=False)
@@ -457,7 +486,7 @@ def write_to_file(df_, df_separation, conf_file='config.ini'):
 
 
 def main():
-    order_df, schedule_df, date_df = get_tables()
+    order_df, schedule_df, date_df, order_type = get_tables()
     result_table = pd.DataFrame()
     result_table_with_separation = pd.DataFrame()
     index_week, index_date = None, None
@@ -470,7 +499,7 @@ def main():
         result_table = result_table.append(res_df.copy())
         result_table_with_separation = result_table_with_separation.append(res_df_with_separation.copy())
 
-    write_to_file(result_table, result_table_with_separation)
+    write_to_file(result_table, result_table_with_separation, order_type)
 
 
 if __name__ == "__main__":
