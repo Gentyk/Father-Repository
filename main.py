@@ -379,6 +379,16 @@ def check_schedule_table(schedule_df):
                         f"разнятся.")
 
 
+def features_to_numbers(row):
+    """ Преобразует значение поля 'вн/внутр' в соответствующее число
+
+    param: row - строка таблицы dataframe
+    return: преобразованная строка
+    """
+    s = row['вн/внутр'].strip()
+    row['вн/внутр'] = 1 if 'внешний' == s else 2
+    return row
+
 def get_tables(conf_file='config.ini'):
     """ Получение и минимальное форматирование стартовых таблиц
     """
@@ -407,9 +417,10 @@ def get_tables(conf_file='config.ini'):
             print(columns)
             datafr = datafr.rename(columns=columns, inplace=True)
 
+    # преобразуем все значения столбца вн/внутр в числа
+    order_df = order_df.apply(features_to_numbers, axis=1)
+
     # словарь вн/внутр для заказов
-    order_df.loc[order_df['вн/внутр'] != 'внешний', 'вн/внутр'] = 2
-    order_df.loc[order_df['вн/внутр'] == 'внешний', 'вн/внутр'] = 1
     unique_orders_names = order_df['Заказ'].unique()
     order_type = {}
     for name in unique_orders_names:
