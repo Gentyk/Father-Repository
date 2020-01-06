@@ -309,11 +309,6 @@ def get_order_keys(key):
     return num1, num2
 
 
-def key_to_name(row, key_decoder):
-    big_key = row['Заказ']
-    row['Заказ'] = key_decoder[big_key]
-    return row
-
 
 def get_record(row, order_df, index_week, index_date):
     """ Производит анализ одной строки планирования
@@ -376,10 +371,16 @@ def get_record(row, order_df, index_week, index_date):
     record.normalize()
 
     # замена id на имена заказов в результирующей таблице
-    transfers_without_separation = record.transfers_without_separation
-    transfers_without_separation = transfers_without_separation.apply(lambda x: key_to_name(x, order_ids), axis=1)
-    transfers_with_separation = record.transfers_with_separation
+    def key_to_name(row):
+        key = row['Заказ']
+        if key in order_ids:
+            row['Заказ'] = order_ids[key]
+        return row
 
+    transfers_without_separation = record.transfers_without_separation
+    transfers_without_separation = transfers_without_separation.apply(key_to_name, axis=1)
+    transfers_with_separation = record.transfers_with_separation
+    transfers_with_separation = transfers_with_separation.apply(key_to_name, axis=1)
 
     return transfers_without_separation, transfers_with_separation
 
