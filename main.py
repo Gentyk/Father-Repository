@@ -33,37 +33,10 @@ class Record:
     def sort_orders(one_week_orders):
         """ сортируем заказы на одну неделю в порядке возрастания двух номеров
         """
-        new_orders = []
         keys = list(one_week_orders.keys())
-        big_sort = []
-        for key in keys:
-            # получаем первое число
-            num1 = 0
-            x = key.split('*')
-            str1 = x[0]
-            n = len(str1)
-            for i in range(n):
-                try:
-                    local_num = int(str1[n - i - 1])
-                    num1 += local_num * 10 ** i
-                except:
-                    break
-
-            # получаем второе число
-            num2 = 0
-            if len(x) > 1:
-                x = key.split('-')
-                if len(x) > 1:
-                    str2 = x[-1]
-                    try:
-                        local_num = int(str2.split('/')[0])
-                        num2 += local_num
-                    except:
-                        pass
-            big_sort.append((num1, num2, key))
-        big_sort.sort(key=lambda x: (x[0], x[1]))
+        keys.sort(key=lambda x: (x[0], x[1]))
         new_dict = OrderedDict()
-        for _, _, k in big_sort:
+        for k in keys:
             new_dict[k] = one_week_orders[k]
         return new_dict
 
@@ -308,6 +281,40 @@ def get_index_week(row, date_df):
     return index_week, index_date
 
 
+def get_order_keys(key):
+    """ сортируем заказы на одну неделю в порядке возрастания двух номеров
+    """
+    num1 = 0
+    x = key.split('*')
+    str1 = x[0]
+    n = len(str1)
+    for i in range(n):
+        try:
+            local_num = int(str1[n - i - 1])
+            num1 += local_num * 10 ** i
+        except:
+            break
+
+    # получаем второе число
+    num2 = 0
+    if len(x) > 1:
+        x = key.split('-')
+        if len(x) > 1:
+            str2 = x[-1]
+            try:
+                local_num = int(str2.split('/')[0])
+                num2 += local_num
+            except:
+                pass
+    return num1, num2
+
+
+def key_to_name(row, key_decoder):
+    big_key = row['Заказ']
+    row['Заказ'] = key_decoder[big_key]
+    return row
+
+
 def get_record(row, order_df, index_week, index_date):
     """ Производит анализ одной строки планирования
 
@@ -334,6 +341,7 @@ def get_record(row, order_df, index_week, index_date):
     engine_id = row['ID_125']
     local_order_df = order_df.loc[order_df['Id_125'] == engine_id]
     local_order_dict = {}
+    order_types = {}
     for ind, local_row in local_order_df.iterrows():
         order = local_row['Заказ']
         date = local_row['datetime']
@@ -344,19 +352,36 @@ def get_record(row, order_df, index_week, index_date):
         else:
             orders[index_date[date]][order] = number_of_engines
 
-        if order in local_order_dict:
-            local_order_dict[order][0] += number_of_engines
-        else:
-            local_order_dict[order] = [
-                number_of_engines,
-                local_row['вн/внутр']
-            ]
+        if order not  in order_types:
+            order_types[order] = local_row['вн/внутр']
 
     invert_index_date = {v: k for k, v in index_date.items()}
+
+    # замена имен заказов на id вида <номер элемента массива>ххх
+    # другими словами, генерация словаря вида {id1: name1, id2: name2, ...} (имена могут повторяться)
+    order_ids = {}
+    k = 0
+    for week_orders in orders:
+        order_names = list(week_orders.keys())
+        for name in order_names:
+            num1, num2 = get_order_keys(name)
+            key = (num1, num2, k)
+            order_ids[key] = name
+            week_orders[key] = week_orders[name]
+            local_order_dict[key] = [week_orders[name], order_types[name]]
+            del week_orders[name]
+            k += 1
+
     record = Record(engine_id, differences, orders, invert_index_date, local_order_dict)
     record.normalize()
 
-    return record.transfers_without_separation, record.transfers_with_separation
+    # замена id на имена заказов в результирующей таблице
+    transfers_without_separation = record.transfers_without_separation
+    transfers_without_separation = transfers_without_separation.apply(lambda x: key_to_name(x, order_ids), axis=1)
+    transfers_with_separation = record.transfers_with_separation
+
+
+    return transfers_without_separation, transfers_with_separation
 
 
 def check_schedule_table(schedule_df):
@@ -388,6 +413,7 @@ def features_to_numbers(row):
     s = row['вн/внутр'].strip()
     row['вн/внутр'] = 1 if 'внешний' == s else 2
     return row
+
 
 def get_tables(conf_file='config.ini'):
     """ Получение и минимальное форматирование стартовых таблиц
