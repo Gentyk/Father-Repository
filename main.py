@@ -34,7 +34,7 @@ class Record:
         """ сортируем заказы на одну неделю в порядке возрастания двух номеров
         """
         keys = list(one_week_orders.keys())
-        keys.sort(key=lambda x: (x[0], x[1]))
+        keys.sort(key=lambda x: (x[0], x[1], x[2]))
         new_dict = OrderedDict()
         for k in keys:
             new_dict[k] = one_week_orders[k]
@@ -83,7 +83,13 @@ class Record:
                 delta -= from_local_order[order_name]
                 self.move(cell_from, cell_to, order_name)
                 # print(cell_from, cell_to, order_name)
-                self.mark_transition(order_name, cell_from, cell_to)
+                t = self.transfers_with_separation[self.transfers_with_separation['Заказ'] == order_name]
+                if not t.empty:
+                    # в случаях, когда заказ хоть раз уже был перенесене на другие даты дробно, то необходимо указать количество для переноса,
+                    # чтобы данный перенос был также записан в дробную таблицу
+                    self.mark_transition(order_name, cell_from, cell_to, from_local_order[order_name])
+                else:
+                    self.mark_transition(order_name, cell_from, cell_to)
             else:
                 self.move(cell_from, cell_to, order_name, delta)
                 # print(cell_from, cell_to, order_name, delta)
@@ -337,35 +343,24 @@ def get_record(row, order_df, index_week, index_date):
     local_order_df = order_df.loc[order_df['Id_125'] == engine_id]
     local_order_dict = {}
     order_types = {}
+    order_ids = {}
+    k = 10000
     for ind, local_row in local_order_df.iterrows():
         order = local_row['Заказ']
+        num1, num2 = get_order_keys(order)
+        key = (num1, num2, k)
+        k -= 1
         date = local_row['datetime']
         number_of_engines = local_row['План']
+        orders[index_date[date]][key] = number_of_engines
 
-        if order in orders[index_date[date]]:
-            orders[index_date[date]][order] += number_of_engines
-        else:
-            orders[index_date[date]][order] = number_of_engines
+        # замена имен заказов на id вида <номер элемента массива>ххх
+        # другими словами, генерация словаря вида {id1: name1, id2: name2, ...} (имена могут повторяться)
+        order_ids[key] = order
+        local_order_dict[key] = [number_of_engines, local_row['вн/внутр']]
 
-        if order not  in order_types:
-            order_types[order] = local_row['вн/внутр']
 
     invert_index_date = {v: k for k, v in index_date.items()}
-
-    # замена имен заказов на id вида <номер элемента массива>ххх
-    # другими словами, генерация словаря вида {id1: name1, id2: name2, ...} (имена могут повторяться)
-    order_ids = {}
-    k = 0
-    for week_orders in orders:
-        order_names = list(week_orders.keys())
-        for name in order_names:
-            num1, num2 = get_order_keys(name)
-            key = (num1, num2, k)
-            order_ids[key] = name
-            week_orders[key] = week_orders[name]
-            local_order_dict[key] = [week_orders[name], order_types[name]]
-            del week_orders[name]
-            k += 1
 
     record = Record(engine_id, differences, orders, invert_index_date, local_order_dict)
     record.normalize()
