@@ -413,6 +413,14 @@ def features_to_numbers(row):
 
 def get_tables(conf_file='config.ini'):
     """ Получение и минимальное форматирование стартовых таблиц
+
+    Обрезаем лишние пробелы справа и слева в именах столбцов
+
+    :param conf_file: имя конфиг файла
+    :return: order_df - большая таблица заказов с заменой "вн/внутр" на числа,
+             schedule_df - таблица плана (пустоты заполнены нулями),
+             date_df - таблица дат буз изменений,
+             order_type - просто запоминает "вн/внутр" для каждого заказа
     """
     config = configparser.ConfigParser()
     config.read_file(codecs.open(conf_file, "r", "utf8"))
@@ -504,6 +512,13 @@ def split_into_iterations(df_separation, order_types) -> (list, pd.DataFrame):
 
 
 def write_to_file(df_, df_separation, order_types, conf_file='config.ini'):
+    """ Запись в файл
+
+    :param df_: таблица для случаев, когда заказ переносится полностью
+    :param df_separation: таблица для случаев, когда заказ переносится частично
+    :param order_types: словарь вида {заказ: "вн/внешн" этого заказа в виде числа}
+    :param conf_file: имя кофиг файлы - для именования выходного файла и стобцов в нем
+    """
     config = configparser.ConfigParser()
     config.read_file(codecs.open(conf_file, "r", "utf8"))
     def_section = config['DEFAULT']
