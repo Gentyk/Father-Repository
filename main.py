@@ -357,7 +357,8 @@ def get_record(row, order_df, index_week, index_date, conf_file='config.ini'):
             config = configparser.ConfigParser()
             config.read_file(codecs.open(conf_file, "r", "utf8"))
             ord_name = local_row['Наименование'].strip()
-            raise Exception(f"Дата кон. заказа {order} (наименование \'{ord_name}\') отсутствует в таблице дат (вкладка {config['DEFAULT']['date_sheet']}).")
+            raise Exception(f"Дата кон. \'{date.strftime('%d.%m.%Y')}\' заказа {order} (наименование \'{ord_name}\') "
+                            f"отсутствует в таблице дат (даты находятся на вкладке {config['DEFAULT']['date_sheet']}).")
         orders[index_date[date]][key] = number_of_engines
 
         # замена имен заказов на id вида <номер элемента массива>ххх
