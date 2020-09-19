@@ -413,6 +413,13 @@ def features_to_numbers(row):
     param: row - строка таблицы dataframe
     return: преобразованная строка
     """
+    if not isinstance(row['вн/внутр'], str):
+        if isinstance(row['вн/внутр'], int) and row['вн/внутр'] in [1, 2]:
+            return row
+        else:
+            t = type(row['вн/внутр'])
+            raise Exception(f"Ошибка при обработке столбца \'вн/внутр\' заказа {row['Заказа']}. "
+                            f"Значение {row['вн/внутр']}, тип {t}.")
     s = row['вн/внутр'].strip()
     row['вн/внутр'] = 1 if 'внешний' == s else 2
     return row
