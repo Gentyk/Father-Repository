@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
 import codecs
-from collections import OrderedDict
 import configparser
-import json
-import pandas as pd
 import datetime
+from collections import OrderedDict
+
+import pandas as pd
 
 
 class Record:
@@ -316,7 +316,7 @@ def get_order_keys(key):
 
 
 
-def get_record(row, order_df, index_week, index_date):
+def get_record(row, order_df, index_week, index_date, conf_file='config.ini'):
     """ Производит анализ одной строки планирования
 
     Переносы фиксируются в необходимые файлы
@@ -325,6 +325,7 @@ def get_record(row, order_df, index_week, index_date):
     :param order_df: pandas.DataFrame - таблица заказов
     :param index_week: соответсвие индексов номерам недель
     :param index_date: соответсвие индексов пятницам(дням)
+    :param conf_file: имя конфиг файла. необходим для более информативного вывода ошибок.
     :return: pandas.DataFrame - таблица перенесенных заказов без разделения
              pandas.DataFrame - таблица перенесенных заказов, когда произошло разделение
     """
@@ -352,6 +353,11 @@ def get_record(row, order_df, index_week, index_date):
         k -= 1
         date = local_row['datetime']
         number_of_engines = local_row['План']
+        if date not in index_date:
+            config = configparser.ConfigParser()
+            config.read_file(codecs.open(conf_file, "r", "utf8"))
+            ord_name = local_row['Наименование'].strip()
+            raise Exception(f"Дата кон. заказа {order} (наименование \'{ord_name}\') отсутствует в таблице дат (вкладка {config['DEFAULT']['date_sheet']}).")
         orders[index_date[date]][key] = number_of_engines
 
         # замена имен заказов на id вида <номер элемента массива>ххх
