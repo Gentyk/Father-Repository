@@ -42,9 +42,7 @@ class Record:
 
     def move(self, cell_from, cell_to, order_name, quality=None):
         """ Перемещение некоторого количества двигаетелей определенного заказа из одной ячейки массива orders в другую
-
         Другими словами - перемещение партии двигателей из заказа n_order с одной недели на другую
-
         :param cell_from: номер ячейки, из которой мы будем перемещать некоторое количество двигателей
         :param cell2: номер ячейки, в которую мы будем перемещать некоторое эти двигатели
         :param order_name: имя заказа
@@ -64,10 +62,8 @@ class Record:
 
     def move_left(self, cell_from: int, cell_to: int, delta:int):
         """ Перемещение заказов на более ранние недели с отметкой этого в журнале
-
         Заказы перебираются в порядке. Ячейка cell_to стоит левее ячейки cell_from, а значит её номер меньше,
         чем у ячейки cell_from. delta должна быть меньше, чем сумма всех двигателей в заказах на cell_from неделю.
-
         :param cell_from: из какой ячейки переносим
         :param cell_to: в какую ячейку переносим
         :param delta: количество двигателей(это может быть не один заказ, а много), которое хотим переместить
@@ -90,6 +86,8 @@ class Record:
                     self.mark_transition(order_name, cell_from, cell_to, from_local_order[order_name])
                 else:
                     self.mark_transition(order_name, cell_from, cell_to)
+                if delta == 0:
+                    break
             else:
                 self.move(cell_from, cell_to, order_name, delta)
                 # print(cell_from, cell_to, order_name, delta)
@@ -98,7 +96,6 @@ class Record:
 
     def move_right(self, cell_from: int, cell_to: int, delta: int, quality=None):
         """ Перемещение заказа на последующие недели (после срока)  с отметкой этого в журнале
-
         :param cell_from: из какой ячейки переносим
         :param cell_to: в какую ячейку переносим
         :param delta: количество двигателей(это может быть не один заказ, а много), которое хотим переместить
@@ -257,11 +254,9 @@ class Record:
 
 def get_index_week(row, date_df):
     """ Возвращает словари соответсвия дат и индексов будущих таблиц
-
     Рассматривая каждое издение, будут созданы массивы каждый элемент которых соответствует отстованию от плана
     на неделю или содержит список заказов на определенной неделе. Для того, чтобы не потерять соответствие дат и
     индексов массивов ввожу дополнительные словари соответствия.
-
     index_date - словарь , где каждому индексу соответствует дата
         например,
         {
@@ -318,9 +313,7 @@ def get_order_keys(key):
 
 def get_record(row, order_df, index_week, index_date, conf_file='config.ini'):
     """ Производит анализ одной строки планирования
-
     Переносы фиксируются в необходимые файлы
-
     :param row: pandas.Series - одна строка таблицы планирования
     :param order_df: pandas.DataFrame - таблица заказов
     :param index_week: соответсвие индексов номерам недель
@@ -389,7 +382,6 @@ def get_record(row, order_df, index_week, index_date, conf_file='config.ini'):
 
 def check_schedule_table(schedule_df):
     """ Проверка, что в таблице планирования нету ошибки
-
     если сумма чисел под Gr* не равна сумме чисел под PL*, то выдастся соответствующая ошибка
     """
     error_indexes = []
@@ -409,7 +401,6 @@ def check_schedule_table(schedule_df):
 
 def features_to_numbers(row):
     """ Преобразует значение поля 'вн/внутр' в соответствующее число
-
     param: row - строка таблицы dataframe
     return: преобразованная строка
     """
@@ -427,9 +418,7 @@ def features_to_numbers(row):
 
 def get_tables(conf_file='config.ini'):
     """ Получение и минимальное форматирование стартовых таблиц
-
     Обрезаем лишние пробелы справа и слева в именах столбцов
-
     :param conf_file: имя конфиг файла
     :return: order_df - большая таблица заказов с заменой "вн/внутр" на числа,
              schedule_df - таблица плана (пустоты заполнены нулями),
@@ -527,7 +516,6 @@ def split_into_iterations(df_separation, order_types) -> (list, pd.DataFrame):
 
 def write_to_file(df_, df_separation, order_types, conf_file='config.ini'):
     """ Запись в файл
-
     :param df_: таблица для случаев, когда заказ переносится полностью
     :param df_separation: таблица для случаев, когда заказ переносится частично
     :param order_types: словарь вида {заказ: "вн/внешн" этого заказа в виде числа}
