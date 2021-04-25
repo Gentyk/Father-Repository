@@ -546,7 +546,7 @@ def write_to_file(df_, df_separation, order_types, conf_file='config.ini'):
         for i, df_sep in enumerate(df_separation_list):
             sheet_name = def_section['result_separation_sheet'] + f"(iter-{i})"
             df_sep.to_excel(writer, sheet_name=sheet_name, index=False)
-        writer.save()
+        #writer.save()
 
 
 def main():
